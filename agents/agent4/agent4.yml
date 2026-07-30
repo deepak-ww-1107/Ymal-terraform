@@ -44,7 +44,7 @@ service_plan:
     location: "West US"
     resource_group_name: "rg-demo"
     os_type: "Linux"
-    sku_name: "POv3"
+    sku_name: "F1"
     tags:
       Project: "Exelixis"
 
