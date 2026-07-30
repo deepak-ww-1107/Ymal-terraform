@@ -48,7 +48,7 @@ service_plan:
     resource_group_name: "rg-demo"
     os_type: "Linux"
     
-    sku_name: "I1v1"
+    sku_name: "Y1"
 
 
     tags:
