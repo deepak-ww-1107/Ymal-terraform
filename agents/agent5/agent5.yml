@@ -1,4 +1,4 @@
-agent: Exelixis-POC-3
+agent: Exelixis-POC-4
 
 storage_account:
   - name: exelixisstorageacct
@@ -44,7 +44,7 @@ service_plan:
     location: "West US"
     resource_group_name: "rg-demo"
     os_type: "Linux"
-    sku_name: "Y1"
+    sku_name: "D1"
     tags:
       Project: "Exelixis"
 
