@@ -1,0 +1,9 @@
+module "{{ instance_name }}" {
+
+  source = "../../../modules/{{ module_name }}"
+
+{% for key, value in variables.items() %}
+  {{ key }} = {{ value }}
+{% endfor %}
+
+}

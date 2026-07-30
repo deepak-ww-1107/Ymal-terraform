@@ -1,0 +1,386 @@
+name: Terraform Wrapper Pipeline
+
+on:
+  push:
+    paths:
+      - "agents/**/*.yml"
+      - "agents/**/*.yaml"
+  workflow_dispatch:
+    inputs:
+      azure_client_id:
+        description: "Azure App Registration (service principal) client ID"
+        required: true
+        type: string
+        default: 'da49ac14-f35b-47db-a82e-6e5d7b7f5b21'
+      azure_tenant_id:
+        description: "Azure tenant ID"
+        required: true
+        type: string
+        default: 'bdcfaa46-3f69-4dfd-b3f7-c582bdfbb820'
+      azure_subscription_id:
+        description: "Azure subscription ID"
+        required: true
+        type: string
+        default: '7868ce89-bd13-41af-a6d4-560b73c8a1d9'
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.11"
+  TERRAFORM_VERSION: "1.9.8"
+  TF_IN_AUTOMATION: "true"
+  ARM_USE_OIDC: "true"
+  ARM_USE_AZUREAD: "true"
+  ARM_CLIENT_ID: ${{ github.event.inputs.azure_client_id || 'da49ac14-f35b-47db-a82e-6e5d7b7f5b21' }}
+  ARM_SUBSCRIPTION_ID: ${{ github.event.inputs.azure_subscription_id || '7868ce89-bd13-41af-a6d4-560b73c8a1d9' }}
+  ARM_TENANT_ID: ${{ github.event.inputs.azure_tenant_id || 'bdcfaa46-3f69-4dfd-b3f7-c582bdfbb820' }}
+  STORAGE_ACCOUNT_ACCESS_KEY: ${{ secrets.STORAGE_ACCOUNT_ACCESS_KEY }}
+  TF_VAR_STORAGE_ACCOUNT_ACCESS_KEY: ${{ secrets.STORAGE_ACCOUNT_ACCESS_KEY }}
+
+jobs:
+  # Detect every changed agent YAML and run one matrix item per agent folder.
+  detect-agents:
+    name: Detect Changed Agent YAML Files
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.build-matrix.outputs.matrix }}
+      has_changes: ${{ steps.build-matrix.outputs.has_changes }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build matrix from changed agent YAML files
+        id: build-matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" = "push" ]; then
+            BEFORE_SHA="${{ github.event.before }}"
+            CURRENT_SHA="${{ github.sha }}"
+
+            if [ -z "${BEFORE_SHA}" ] || [ "${BEFORE_SHA}" = "0000000000000000000000000000000000000000" ]; then
+              mapfile -t CHANGED < <(git ls-files "agents/**/*.yml" "agents/**/*.yaml" | sort -u)
+            else
+              mapfile -t CHANGED < <(git diff --name-only --diff-filter=AM "${BEFORE_SHA}" "${CURRENT_SHA}" -- "agents/**/*.yml" "agents/**/*.yaml" | sort -u)
+            fi
+          else
+            mapfile -t CHANGED < <(git ls-files "agents/**/*.yml" "agents/**/*.yaml" | sort -u)
+          fi
+
+          if [ ${#CHANGED[@]} -eq 0 ]; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            echo 'matrix={"include":[]}' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          JSON_LIST=$(python -c 'import json,sys; files=[arg.strip() for arg in sys.argv[1:] if arg.strip()]; print(json.dumps({"include": [{"agent_yaml": f} for f in files]}))' "${CHANGED[@]}")
+
+          echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          echo "matrix=${JSON_LIST}" >> "$GITHUB_OUTPUT"
+
+  terraform-plan:
+    name: Terraform Plan
+    needs: detect-agents
+    if: needs.detect-agents.outputs.has_changes == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.detect-agents.outputs.matrix) }}
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Python requirements
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: Validate Azure OIDC parameters
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${ARM_CLIENT_ID}" || (echo "ARM_CLIENT_ID is empty"; exit 1)
+          test -n "${ARM_TENANT_ID}" || (echo "ARM_TENANT_ID is empty"; exit 1)
+          test -n "${ARM_SUBSCRIPTION_ID}" || (echo "ARM_SUBSCRIPTION_ID is empty"; exit 1)
+
+      - name: Azure login with OIDC federation
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.ARM_CLIENT_ID }}
+          tenant-id: ${{ env.ARM_TENANT_ID }}
+          subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
+
+      - name: Extract agent metadata
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python -c 'import os; from pathlib import Path; import yaml; agent_yaml=Path(os.environ["AGENT_YAML"]); data=yaml.safe_load(open(agent_yaml, "r", encoding="utf-8")); assert isinstance(data, dict); agent=data.get("agent"); assert isinstance(agent, str) and agent.strip(); agent=agent.strip(); agent_dir=str(agent_yaml.parent).replace("\\\\", "/"); tf_workdir=f"{agent_dir}/output"; plan_name=f"{agent}.tfplan"; state_key=f"{agent}/terraform.tfstate"; artifact_name=f"tfplan-{agent}"; plan_summary_file=f"{agent}-plan.txt"; out=open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8"); out.write(f"agent={agent}\n"); out.write(f"tf_workdir={tf_workdir}\n"); out.write(f"plan_name={plan_name}\n"); out.write(f"state_key={state_key}\n"); out.write(f"artifact_name={artifact_name}\n"); out.write(f"plan_summary_file={plan_summary_file}\n")'
+        env:
+          AGENT_YAML: ${{ matrix.agent_yaml }}
+
+      - name: Generate Terraform using Python wrapper
+        run: |
+          set -euo pipefail
+          python app.py "${{ matrix.agent_yaml }}"
+
+      - name: Prepare Terraform files
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p "${{ steps.meta.outputs.tf_workdir }}"
+
+          cat > "${{ steps.meta.outputs.tf_workdir }}/backend.tf" <<'EOF'
+          terraform {
+            backend "azurerm" {}
+            required_providers {
+              azurerm = {
+                source  = "hashicorp/azurerm"
+                version = ">= 3.0"
+              }
+            }
+          }
+
+          provider "azurerm" {
+            features {}
+          }
+          EOF
+
+      - name: Show generated Terraform
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "===== Generated main.tf ====="
+          cat "${{ steps.meta.outputs.tf_workdir }}/main.tf"
+
+      - name: Terraform fmt
+        run: terraform -chdir="${{ steps.meta.outputs.tf_workdir }}" fmt -recursive
+
+      - name: Terraform init with remote backend
+        run: |
+          terraform -chdir="${{ steps.meta.outputs.tf_workdir }}" init \
+            -backend-config="storage_account_name=${{ secrets.TF_STATE_STORAGE_ACCOUNT }}" \
+            -backend-config="container_name=${{ secrets.TF_STATE_CONTAINER }}" \
+            -backend-config="resource_group_name=${{ secrets.RESOURCE_GROUP }}" \
+            -backend-config="key=${{ steps.meta.outputs.state_key }}" \
+            -backend-config="use_azuread_auth=true" \
+            -backend-config="use_oidc=true"
+
+      - name: Terraform validate
+        run: terraform -chdir="${{ steps.meta.outputs.tf_workdir }}" validate
+
+      - name: Terraform plan
+        run: |
+          terraform -chdir="${{ steps.meta.outputs.tf_workdir }}" plan \
+            -out="${{ steps.meta.outputs.plan_name }}"
+
+      # Render the generated plan to a readable text file for reviewers.
+      - name: Render plan for review
+        run: |
+          terraform -chdir="${{ steps.meta.outputs.tf_workdir }}" show -no-color "${{ steps.meta.outputs.plan_name }}" > "${{ steps.meta.outputs.plan_summary_file }}"
+
+      # Publish the plan summary to the GitHub Actions run summary.
+      - name: Publish plan summary
+        shell: bash
+        run: |
+          {
+            echo "## Terraform Plan - ${{ steps.meta.outputs.agent }}"
+            echo ""
+            echo "Backend key: ${{ steps.meta.outputs.state_key }}"
+            echo ""
+            echo "\`\`\`hcl"
+            cat "${{ steps.meta.outputs.plan_summary_file }}"
+            echo "\`\`\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Prepare plan artifact staging folder
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/plan-artifact"
+          cp "${{ steps.meta.outputs.tf_workdir }}/${{ steps.meta.outputs.plan_name }}" "$RUNNER_TEMP/plan-artifact/${{ steps.meta.outputs.plan_name }}"
+          cp "${{ steps.meta.outputs.plan_summary_file }}" "$RUNNER_TEMP/plan-artifact/${{ steps.meta.outputs.plan_summary_file }}"
+          echo "===== Plan artifact staging debug ====="
+          pwd
+          ls -R "$RUNNER_TEMP/plan-artifact"
+
+      - name: Upload Terraform plan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.meta.outputs.artifact_name }}
+          path: |
+            ${{ runner.temp }}/plan-artifact/${{ steps.meta.outputs.plan_name }}
+            ${{ runner.temp }}/plan-artifact/${{ steps.meta.outputs.plan_summary_file }}
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Remove runner-only backend file before commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f "${{ steps.meta.outputs.tf_workdir }}/backend.tf"
+          echo "===== git status after backend cleanup ====="
+          git status --short
+
+      - name: Commit generated Terraform output
+        if: github.actor != 'github-actions[bot]'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BRANCH_NAME="${GITHUB_REF_NAME}"
+
+          git fetch origin "${BRANCH_NAME}"
+          git checkout -B "${BRANCH_NAME}" "origin/${BRANCH_NAME}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -- "${{ steps.meta.outputs.tf_workdir }}/main.tf"
+
+          if git diff --cached --quiet --exit-code; then
+            echo "No generated Terraform changes for ${{ steps.meta.outputs.agent }}"
+          else
+            git commit -m "Update generated Terraform for ${{ steps.meta.outputs.agent }}"
+            git push origin "HEAD:${BRANCH_NAME}"
+          fi
+
+  terraform-apply:
+    name: Terraform Apply
+    needs:
+      - detect-agents
+      - terraform-plan
+    if: needs.detect-agents.outputs.has_changes == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.detect-agents.outputs.matrix) }}
+    environment:
+      name: Production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Python requirements
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: Validate Azure OIDC parameters
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${ARM_CLIENT_ID}" || (echo "ARM_CLIENT_ID is empty"; exit 1)
+          test -n "${ARM_TENANT_ID}" || (echo "ARM_TENANT_ID is empty"; exit 1)
+          test -n "${ARM_SUBSCRIPTION_ID}" || (echo "ARM_SUBSCRIPTION_ID is empty"; exit 1)
+
+      - name: Azure login with OIDC federation
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.ARM_CLIENT_ID }}
+          tenant-id: ${{ env.ARM_TENANT_ID }}
+          subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
+
+      - name: Extract agent metadata
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python -c 'import os; from pathlib import Path; import yaml; agent_yaml=Path(os.environ["AGENT_YAML"]); data=yaml.safe_load(open(agent_yaml, "r", encoding="utf-8")); assert isinstance(data, dict); agent=data.get("agent"); assert isinstance(agent, str) and agent.strip(); agent=agent.strip(); agent_dir=str(agent_yaml.parent).replace("\\\\", "/"); tf_workdir=f"{agent_dir}/output"; plan_name=f"{agent}.tfplan"; state_key=f"{agent}/terraform.tfstate"; artifact_name=f"tfplan-{agent}"; plan_summary_file=f"{agent}-plan.txt"; out=open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8"); out.write(f"tf_workdir={tf_workdir}\n"); out.write(f"plan_name={plan_name}\n"); out.write(f"state_key={state_key}\n"); out.write(f"artifact_name={artifact_name}\n"); out.write(f"plan_summary_file={plan_summary_file}\n")'
+        env:
+          AGENT_YAML: ${{ matrix.agent_yaml }}
+
+      - name: Generate Terraform using Python wrapper
+        run: |
+          set -euo pipefail
+          python app.py "${{ matrix.agent_yaml }}"
+
+      - name: Prepare Terraform files
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p "${{ steps.meta.outputs.tf_workdir }}"
+
+          cat > "${{ steps.meta.outputs.tf_workdir }}/backend.tf" <<'EOF'
+          terraform {
+            backend "azurerm" {}
+            required_providers {
+              azurerm = {
+                source  = "hashicorp/azurerm"
+                version = ">= 3.0"
+              }
+            }
+          }
+
+          provider "azurerm" {
+            features {}
+          }
+          EOF
+
+      - name: Download Terraform plan artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ steps.meta.outputs.artifact_name }}
+          path: ./plans
+
+      - name: Show downloaded plan artifact contents
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "===== Downloaded artifact debug ====="
+          pwd
+          ls -R
+          ls -R ./plans
+          echo "===== Expected plan file ====="
+          ls -l "./plans/${{ steps.meta.outputs.plan_name }}"
+
+      - name: Terraform init with remote backend
+        run: |
+          terraform -chdir="${{ steps.meta.outputs.tf_workdir }}" init \
+            -backend-config="storage_account_name=${{ secrets.TF_STATE_STORAGE_ACCOUNT }}" \
+            -backend-config="container_name=${{ secrets.TF_STATE_CONTAINER }}" \
+            -backend-config="resource_group_name=${{ secrets.RESOURCE_GROUP }}" \
+            -backend-config="key=${{ steps.meta.outputs.state_key }}" \
+            -backend-config="use_azuread_auth=true" \
+            -backend-config="use_oidc=true"
+
+      - name: Terraform apply from approved plan
+        run: terraform -chdir="${{ steps.meta.outputs.tf_workdir }}" apply -input=false "${{ github.workspace }}/plans/${{ steps.meta.outputs.plan_name }}"
