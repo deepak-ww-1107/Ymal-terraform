@@ -68,7 +68,7 @@ module "service_plan_1" {
   location            = "East US"
   resource_group_name = "rg-demo"
   os_type             = "Linux"
-  sku_name            = "S3"
+  sku_name            = "B3"
   tags = {
     Project = "Exelixis"
   }
