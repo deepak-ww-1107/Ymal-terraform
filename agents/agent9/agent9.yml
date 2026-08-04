@@ -44,7 +44,7 @@ service_plan:
     location: "South India"
     resource_group_name: "rg-demo"
     os_type: "Linux"
-    sku_name: "B1"
+    sku_name: "B3"
     tags:
       Project: "Exelixis"
 
