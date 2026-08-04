@@ -3,7 +3,7 @@ module "storage_account_1" {
   source = "../../../modules/storage_account"
 
   name                            = "exelixisstorageacct"
-  location                        = "eastus"
+  location                        = "South India"
   resource_group_name             = "rg-demo"
   account_tier                    = "Standard"
   account_replication_type        = "LRS"
@@ -21,24 +21,8 @@ module "log_analytics_workspace_1" {
   source = "../../../modules/log_analytics_workspace"
 
   name                = "law-eva-fet"
-  location            = "East US"
+  location            = "South India"
   resource_group_name = "rg-demo"
-  tags = {
-    Project = "Exelixis"
-  }
-
-}
-
-module "search_service_1" {
-
-  source = "../../../modules/search_service"
-
-  name                       = "srch-eva-dev"
-  location                   = "East US"
-  resource_group_name        = "rg-demo"
-  sku                        = "basic"
-  semantic_search_sku        = "free"
-  network_rule_bypass_option = "None"
   tags = {
     Project = "Exelixis"
   }
@@ -50,7 +34,7 @@ module "application_insights_1" {
   source = "../../../modules/application_insights"
 
   name                = "appi-eva-dev"
-  location            = "East US"
+  location            = "South India"
   resource_group_name = "rg-demo"
   application_type    = "web"
   sampling_percentage = 100
@@ -65,10 +49,10 @@ module "service_plan_1" {
   source = "../../../modules/service_plan"
 
   name                = "asp-eva-dev"
-  location            = "East US"
+  location            = "South India"
   resource_group_name = "rg-demo"
   os_type             = "Linux"
-  sku_name            = "B3"
+  sku_name            = "B1"
   tags = {
     Project = "Exelixis"
   }
@@ -80,7 +64,7 @@ module "linux_function_app_1" {
   source = "../../../modules/linux_function_app"
 
   name                                   = "func-linux-eva-dev"
-  location                               = "East US"
+  location                               = "South India"
   resource_group_name                    = "rg-demo"
   service_plan_id                        = module.service_plan_1.id
   storage_account_name                   = module.storage_account_1.name
@@ -107,7 +91,7 @@ module "windows_function_app_1" {
   source = "../../../modules/windows_function_app"
 
   name                                   = "func-windows-eva-dev"
-  location                               = "East US"
+  location                               = "South India"
   resource_group_name                    = "rg-demo"
   service_plan_id                        = module.service_plan_1.id
   storage_account_name                   = module.storage_account_1.name
