@@ -127,4 +127,4 @@ windows_function_app:
       FUNCTIONS_WORKER_RUNTIME: "dotnet"
       WEBSITE_RUN_FROM_PACKAGE: "1"
     tags:
-      Project: "Exelixis"
+      Project: "Exelixis" 
