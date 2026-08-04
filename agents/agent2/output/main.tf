@@ -132,7 +132,7 @@ module "windows_function_app_2" {
 
   source = "../../../modules/windows_function_app"
 
-  name                                   = "func-windows-eva-dev"
+  name                                   = "func-windows-ind-dev"
   location                               = "South India"
   resource_group_name                    = "rg-demo"
   service_plan_id                        = module.service_plan_2.id
