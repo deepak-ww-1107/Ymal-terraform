@@ -117,7 +117,7 @@ module "windows_function_app_1" {
   client_certificate_mode                = "Optional"
   ftps_state                             = "Disabled"
   ip_restriction_default_action          = "Allow"
-  allowed_origins                        = ["https://*.exelixis.com"]
+  allowed_origins                        = ["*"]
   app_settings = {
     FUNCTIONS_WORKER_RUNTIME = "dotnet"
     WEBSITE_RUN_FROM_PACKAGE = "1"
