@@ -24,6 +24,7 @@ on:
         default: '7868ce89-bd13-41af-a6d4-560b73c8a1d9'
 
 permissions:
+  id-token: write
   contents: read
 
 env:
