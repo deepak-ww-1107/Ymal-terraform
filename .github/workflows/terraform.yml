@@ -48,7 +48,7 @@ jobs:
       has_changes: ${{ steps.build-matrix.outputs.has_changes }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@85e6279cec87321a52edac9c87bce653a07cf6c2
         with:
           fetch-depth: 0
 
@@ -95,12 +95,12 @@ jobs:
       id-token: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@85e6279cec87321a52edac9c87bce653a07cf6c2
         with:
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@0b711b71d4acda82522778da512140a7cf6a524e
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -111,7 +111,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: Set up Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd
         with:
           terraform_version: ${{ env.TERRAFORM_VERSION }}
 
@@ -124,7 +124,7 @@ jobs:
           test -n "${ARM_SUBSCRIPTION_ID}" || (echo "ARM_SUBSCRIPTION_ID is empty"; exit 1)
 
       - name: Azure login with OIDC federation
-        uses: azure/login@v2
+        uses: azure/login@6c251865b4e6290e7b78be643ea2d005bc51f69a
         with:
           client-id: ${{ env.ARM_CLIENT_ID }}
           tenant-id: ${{ env.ARM_TENANT_ID }}
@@ -227,7 +227,7 @@ jobs:
           ls -R "$RUNNER_TEMP/plan-artifact"
 
       - name: Upload Terraform plan artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: ${{ steps.meta.outputs.artifact_name }}
           path: |
@@ -284,10 +284,10 @@ jobs:
       id-token: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@85e6279cec87321a52edac9c87bce653a07cf6c2
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@0b711b71d4acda82522778da512140a7cf6a524e
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -298,7 +298,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: Set up Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd
         with:
           terraform_version: ${{ env.TERRAFORM_VERSION }}
 
@@ -311,7 +311,7 @@ jobs:
           test -n "${ARM_SUBSCRIPTION_ID}" || (echo "ARM_SUBSCRIPTION_ID is empty"; exit 1)
 
       - name: Azure login with OIDC federation
-        uses: azure/login@v2
+        uses: azure/login@6c251865b4e6290e7b78be643ea2d005bc51f69a
         with:
           client-id: ${{ env.ARM_CLIENT_ID }}
           tenant-id: ${{ env.ARM_TENANT_ID }}
@@ -356,7 +356,7 @@ jobs:
           EOF
 
       - name: Download Terraform plan artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16
         with:
           name: ${{ steps.meta.outputs.artifact_name }}
           path: ./plans
@@ -384,3 +384,4 @@ jobs:
 
       - name: Terraform apply from approved plan
         run: terraform -chdir="${{ steps.meta.outputs.tf_workdir }}" apply -input=false "${{ github.workspace }}/plans/${{ steps.meta.outputs.plan_name }}"
+ 
