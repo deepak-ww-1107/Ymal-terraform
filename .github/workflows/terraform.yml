@@ -101,7 +101,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@1356f9ffdb1fa33f956561e1b12b509d316fb132
+        uses: actions/setup-python@8d9ed9ac5c53483de85588cdf95a591a75ab9f55
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -288,7 +288,7 @@ jobs:
         uses: actions/checkout@85e6279cec87321a52edac9c87bce653a07cf6c2
 
       - name: Set up Python
-        uses: actions/setup-python@1356f9ffdb1fa33f956561e1b12b509d316fb132
+        uses: actions/setup-python@8d9ed9ac5c53483de85588cdf95a591a75ab9f55
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
