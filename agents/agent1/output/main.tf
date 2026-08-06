@@ -52,21 +52,6 @@ module "service_plan_1" {
   location            = "South India"
   resource_group_name = "rg-demo"
   os_type             = "Linux"
-  sku_name            = "B3"
-  tags = {
-    Project = "Exelixis"
-  }
-
-}
-
-module "service_plan_2" {
-
-  source = "../../../modules/service_plan"
-
-  name                = "asp-sin-dev"
-  location            = "South India"
-  resource_group_name = "rg-demo"
-  os_type             = "Linux"
   sku_name            = "B1"
   tags = {
     Project = "Exelixis"
@@ -109,33 +94,6 @@ module "windows_function_app_1" {
   location                               = "South India"
   resource_group_name                    = "rg-demo"
   service_plan_id                        = module.service_plan_1.id
-  storage_account_name                   = module.storage_account_1.name
-  storage_account_access_key             = module.storage_account_1.primary_access_key
-  application_insights_connection_string = module.application_insights_1.connection_string
-  https_only                             = true
-  builtin_logging_enabled                = true
-  client_certificate_mode                = "Optional"
-  ftps_state                             = "Disabled"
-  ip_restriction_default_action          = "Allow"
-  allowed_origins                        = ["*"]
-  app_settings = {
-    FUNCTIONS_WORKER_RUNTIME = "dotnet"
-    WEBSITE_RUN_FROM_PACKAGE = "1"
-  }
-  tags = {
-    Project = "Exelixis"
-  }
-
-}
-
-module "windows_function_app_2" {
-
-  source = "../../../modules/windows_function_app"
-
-  name                                   = "func-windows-ind-dev"
-  location                               = "South India"
-  resource_group_name                    = "rg-demo"
-  service_plan_id                        = module.service_plan_2.id
   storage_account_name                   = module.storage_account_1.name
   storage_account_access_key             = module.storage_account_1.primary_access_key
   application_insights_connection_string = module.application_insights_1.connection_string
