@@ -90,10 +90,11 @@ jobs:
           from pathlib import Path
           import yaml
 
+          files = [arg.strip() for arg in sys.argv[1:] if arg.strip()]
           apply = []
           destroy = []
 
-          for file_path in [arg.strip() for arg in sys.argv[1:] if arg.strip()]:
+          for file_path in files:
             with open(file_path, "r", encoding="utf-8") as f:
               data = yaml.safe_load(f) or {}
 
