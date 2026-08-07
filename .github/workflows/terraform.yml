@@ -163,13 +163,13 @@ jobs:
           }
 
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
-            out.write(f"changed_files={json.dumps(files)}\\n")
-            out.write(f"classification_details={json.dumps(classification)}\\n")
-            out.write(f"trigger_context={json.dumps(trigger_context)}\\n")
-            out.write(f"has_apply={'true' if apply else 'false'}\\n")
-            out.write(f"has_destroy={'true' if destroy else 'false'}\\n")
-            out.write(f"apply_matrix={json.dumps({'include': apply})}\\n")
-            out.write(f"destroy_matrix={json.dumps({'include': destroy})}\\n")
+            out.write(f"changed_files={json.dumps(files)}\n")
+            out.write(f"classification_details={json.dumps(classification)}\n")
+            out.write(f"trigger_context={json.dumps(trigger_context)}\n")
+            out.write(f"has_apply={'true' if apply else 'false'}\n")
+            out.write(f"has_destroy={'true' if destroy else 'false'}\n")
+            out.write(f"apply_matrix={json.dumps({'include': apply})}\n")
+            out.write(f"destroy_matrix={json.dumps({'include': destroy})}\n")
           PY
         env:
           BEFORE_SHA: ${{ github.event.before }}
