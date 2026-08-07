@@ -45,6 +45,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       changed_files: ${{ steps.build-matrix.outputs.changed_files }}
+      trigger_context: ${{ steps.build-matrix.outputs.trigger_context }}
+      classification_details: ${{ steps.build-matrix.outputs.classification_details }}
       apply_matrix: ${{ steps.build-matrix.outputs.apply_matrix }}
       destroy_matrix: ${{ steps.build-matrix.outputs.destroy_matrix }}
       has_apply: ${{ steps.build-matrix.outputs.has_apply }}
@@ -61,6 +63,9 @@ jobs:
         run: |
           set -euo pipefail
 
+          BEFORE_SHA=""
+          CURRENT_SHA=""
+
           if [ "${{ github.event_name }}" = "push" ]; then
             BEFORE_SHA="${{ github.event.before }}"
             CURRENT_SHA="${{ github.sha }}"
@@ -76,6 +81,8 @@ jobs:
 
           if [ ${#CHANGED[@]} -eq 0 ]; then
             echo "changed_files=[]" >> "$GITHUB_OUTPUT"
+            echo "classification_details=[]" >> "$GITHUB_OUTPUT"
+            echo "trigger_context={\"event_name\":\"${GITHUB_EVENT_NAME}\",\"before_sha\":\"${BEFORE_SHA}\",\"current_sha\":\"${CURRENT_SHA}\",\"changed_count\":0}" >> "$GITHUB_OUTPUT"
             echo "has_apply=false" >> "$GITHUB_OUTPUT"
             echo "has_destroy=false" >> "$GITHUB_OUTPUT"
             echo 'apply_matrix={"include":[]}' >> "$GITHUB_OUTPUT"
@@ -93,6 +100,7 @@ jobs:
           files = [arg.strip() for arg in sys.argv[1:] if arg.strip()]
           apply = []
           destroy = []
+          classification = []
 
           for file_path in files:
             with open(file_path, "r", encoding="utf-8") as f:
@@ -122,23 +130,51 @@ jobs:
                   f"Destroy guard failed for {file_path}: destroy='{destroy_value}' must match agent='{agent}'"
                 )
               destroy.append(item)
+              classification.append({
+                "agent_yaml": file_path,
+                "agent": agent,
+                "destroy": destroy_value,
+                "route": "destroy",
+                "reason": "destroy key is present and matches agent"
+              })
             else:
               apply.append(item)
+              classification.append({
+                "agent_yaml": file_path,
+                "agent": agent,
+                "destroy": "",
+                "route": "apply",
+                "reason": "destroy key is empty or missing"
+              })
+
+          trigger_context = {
+            "event_name": os.getenv("GITHUB_EVENT_NAME", ""),
+            "before_sha": os.getenv("BEFORE_SHA", ""),
+            "current_sha": os.getenv("CURRENT_SHA", ""),
+            "changed_count": len(files)
+          }
 
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
             out.write(f"changed_files={json.dumps(files)}\\n")
+            out.write(f"classification_details={json.dumps(classification)}\\n")
+            out.write(f"trigger_context={json.dumps(trigger_context)}\\n")
             out.write(f"has_apply={'true' if apply else 'false'}\\n")
             out.write(f"has_destroy={'true' if destroy else 'false'}\\n")
             out.write(f"apply_matrix={json.dumps({'include': apply})}\\n")
             out.write(f"destroy_matrix={json.dumps({'include': destroy})}\\n")
           PY
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          CURRENT_SHA: ${{ github.sha }}
 
       - name: Show detection summary
         shell: bash
         run: |
           set -euo pipefail
 
+          echo "trigger_context: ${{ steps.build-matrix.outputs.trigger_context }}"
           echo "Changed files: ${{ steps.build-matrix.outputs.changed_files }}"
+          echo "classification_details: ${{ steps.build-matrix.outputs.classification_details }}"
           echo "has_apply: ${{ steps.build-matrix.outputs.has_apply }}"
           echo "has_destroy: ${{ steps.build-matrix.outputs.has_destroy }}"
           echo "apply_matrix: ${{ steps.build-matrix.outputs.apply_matrix }}"
@@ -147,9 +183,19 @@ jobs:
           {
             echo "## Detect Agents Summary"
             echo ""
+            echo "Trigger context:"
+            echo "\`\`\`json"
+            echo '${{ steps.build-matrix.outputs.trigger_context }}'
+            echo "\`\`\`"
+            echo ""
             echo "Changed files:"
             echo "\`\`\`json"
             echo '${{ steps.build-matrix.outputs.changed_files }}'
+            echo "\`\`\`"
+            echo ""
+            echo "Classification details:"
+            echo "\`\`\`json"
+            echo '${{ steps.build-matrix.outputs.classification_details }}'
             echo "\`\`\`"
             echo ""
             echo "has_apply: ${{ steps.build-matrix.outputs.has_apply }}"
@@ -204,9 +250,6 @@ jobs:
     needs: prepare-apply
     if: needs.prepare-apply.outputs.has_apply == 'true'
     runs-on: ubuntu-latest
-    outputs:
-      has_apply: ${{ needs.prepare-apply.outputs.has_apply }}
-      apply_matrix: ${{ needs.prepare-apply.outputs.apply_matrix }}
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.prepare-apply.outputs.apply_matrix) }}
@@ -389,12 +432,14 @@ jobs:
 
   terraform-apply:
     name: Terraform Apply
-    needs: terraform-plan
-    if: needs.terraform-plan.outputs.has_apply == 'true'
+    needs:
+      - prepare-apply
+      - terraform-plan
+    if: needs.prepare-apply.outputs.has_apply == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix: ${{ fromJson(needs.terraform-plan.outputs.apply_matrix) }}
+      matrix: ${{ fromJson(needs.prepare-apply.outputs.apply_matrix) }}
     environment:
       name: Production
     permissions:
@@ -508,9 +553,6 @@ jobs:
     needs: prepare-destroy
     if: needs.prepare-destroy.outputs.has_destroy == 'true'
     runs-on: ubuntu-latest
-    outputs:
-      has_destroy: ${{ needs.prepare-destroy.outputs.has_destroy }}
-      destroy_matrix: ${{ needs.prepare-destroy.outputs.destroy_matrix }}
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.prepare-destroy.outputs.destroy_matrix) }}
@@ -642,12 +684,14 @@ jobs:
 
   terraform-destroy-apply:
     name: Terraform Destroy Apply
-    needs: terraform-destroy-plan
-    if: needs.terraform-destroy-plan.outputs.has_destroy == 'true'
+    needs:
+      - prepare-destroy
+      - terraform-destroy-plan
+    if: needs.prepare-destroy.outputs.has_destroy == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix: ${{ fromJson(needs.terraform-destroy-plan.outputs.destroy_matrix) }}
+      matrix: ${{ fromJson(needs.prepare-destroy.outputs.destroy_matrix) }}
     environment:
       name: Production
     permissions:
