@@ -74,7 +74,7 @@ class Validator:
                 "Root element must be a dictionary."
             )
 
-        reserved_keys = {"agent"}
+        reserved_keys = {"agent", "destroy", "Destroy"}
 
         module_data = {
             key: value
