@@ -71,15 +71,23 @@ jobs:
             CURRENT_SHA="${{ github.sha }}"
 
             if [ -z "${BEFORE_SHA}" ] || [ "${BEFORE_SHA}" = "0000000000000000000000000000000000000000" ]; then
-              mapfile -t CHANGED < <(git ls-files "agents/**/*.yml" "agents/**/*.yaml" | sort -u)
+              mapfile -t CHANGED < <(git ls-files agents | grep -E '^agents/.+\.ya?ml$' | sort -u)
             else
-              mapfile -t CHANGED < <(git diff --name-only --diff-filter=AM "${BEFORE_SHA}" "${CURRENT_SHA}" -- "agents/**/*.yml" "agents/**/*.yaml" | sort -u)
+              mapfile -t CHANGED < <(git diff --name-only --diff-filter=AM "${BEFORE_SHA}" "${CURRENT_SHA}" -- agents | grep -E '^agents/.+\.ya?ml$' | sort -u)
             fi
           else
-            mapfile -t CHANGED < <(git ls-files "agents/**/*.yml" "agents/**/*.yaml" | sort -u)
+            mapfile -t CHANGED < <(git ls-files agents | grep -E '^agents/.+\.ya?ml$' | sort -u)
           fi
 
           if [ ${#CHANGED[@]} -eq 0 ]; then
+            if [ "${{ github.event_name }}" = "push" ]; then
+              echo "No changed agent YAML files detected for push range ${BEFORE_SHA}..${CURRENT_SHA}."
+              echo "This likely means git path matching missed files or the push did not include agent YAML changes."
+              echo "Raw changed files in push range:"
+              git diff --name-only --diff-filter=AM "${BEFORE_SHA}" "${CURRENT_SHA}" -- . || true
+              exit 1
+            fi
+
             echo "changed_files=[]" >> "$GITHUB_OUTPUT"
             echo "classification_details=[]" >> "$GITHUB_OUTPUT"
             echo "trigger_context={\"event_name\":\"${GITHUB_EVENT_NAME}\",\"before_sha\":\"${BEFORE_SHA}\",\"current_sha\":\"${CURRENT_SHA}\",\"changed_count\":0}" >> "$GITHUB_OUTPUT"
