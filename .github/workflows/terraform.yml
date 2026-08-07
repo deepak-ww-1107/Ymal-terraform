@@ -44,6 +44,7 @@ jobs:
     name: Detect Changed Agent YAML Files
     runs-on: ubuntu-latest
     outputs:
+      changed_files: ${{ steps.build-matrix.outputs.changed_files }}
       apply_matrix: ${{ steps.build-matrix.outputs.apply_matrix }}
       destroy_matrix: ${{ steps.build-matrix.outputs.destroy_matrix }}
       has_apply: ${{ steps.build-matrix.outputs.has_apply }}
@@ -74,6 +75,7 @@ jobs:
           fi
 
           if [ ${#CHANGED[@]} -eq 0 ]; then
+            echo "changed_files=[]" >> "$GITHUB_OUTPUT"
             echo "has_apply=false" >> "$GITHUB_OUTPUT"
             echo "has_destroy=false" >> "$GITHUB_OUTPUT"
             echo 'apply_matrix={"include":[]}' >> "$GITHUB_OUTPUT"
@@ -123,20 +125,90 @@ jobs:
               apply.append(item)
 
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+            out.write(f"changed_files={json.dumps(files)}\\n")
             out.write(f"has_apply={'true' if apply else 'false'}\\n")
             out.write(f"has_destroy={'true' if destroy else 'false'}\\n")
             out.write(f"apply_matrix={json.dumps({'include': apply})}\\n")
             out.write(f"destroy_matrix={json.dumps({'include': destroy})}\\n")
           PY
 
+      - name: Show detection summary
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Changed files: ${{ steps.build-matrix.outputs.changed_files }}"
+          echo "has_apply: ${{ steps.build-matrix.outputs.has_apply }}"
+          echo "has_destroy: ${{ steps.build-matrix.outputs.has_destroy }}"
+          echo "apply_matrix: ${{ steps.build-matrix.outputs.apply_matrix }}"
+          echo "destroy_matrix: ${{ steps.build-matrix.outputs.destroy_matrix }}"
+
+          {
+            echo "## Detect Agents Summary"
+            echo ""
+            echo "Changed files:"
+            echo "\`\`\`json"
+            echo '${{ steps.build-matrix.outputs.changed_files }}'
+            echo "\`\`\`"
+            echo ""
+            echo "has_apply: ${{ steps.build-matrix.outputs.has_apply }}"
+            echo ""
+            echo "has_destroy: ${{ steps.build-matrix.outputs.has_destroy }}"
+            echo ""
+            echo "Apply matrix:"
+            echo "\`\`\`json"
+            echo '${{ steps.build-matrix.outputs.apply_matrix }}'
+            echo "\`\`\`"
+            echo ""
+            echo "Destroy matrix:"
+            echo "\`\`\`json"
+            echo '${{ steps.build-matrix.outputs.destroy_matrix }}'
+            echo "\`\`\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  prepare-apply:
+    name: Prepare Apply Matrix
+    needs: detect-agents
+    runs-on: ubuntu-latest
+    outputs:
+      has_apply: ${{ steps.export.outputs.has_apply }}
+      apply_matrix: ${{ steps.export.outputs.apply_matrix }}
+    steps:
+      - name: Export apply matrix
+        id: export
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'has_apply=${{ needs.detect-agents.outputs.has_apply }}' >> "$GITHUB_OUTPUT"
+          echo 'apply_matrix=${{ needs.detect-agents.outputs.apply_matrix }}' >> "$GITHUB_OUTPUT"
+
+  prepare-destroy:
+    name: Prepare Destroy Matrix
+    needs: detect-agents
+    runs-on: ubuntu-latest
+    outputs:
+      has_destroy: ${{ steps.export.outputs.has_destroy }}
+      destroy_matrix: ${{ steps.export.outputs.destroy_matrix }}
+    steps:
+      - name: Export destroy matrix
+        id: export
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'has_destroy=${{ needs.detect-agents.outputs.has_destroy }}' >> "$GITHUB_OUTPUT"
+          echo 'destroy_matrix=${{ needs.detect-agents.outputs.destroy_matrix }}' >> "$GITHUB_OUTPUT"
+
   terraform-plan:
     name: Terraform Plan
-    needs: detect-agents
-    if: needs.detect-agents.outputs.has_apply == 'true'
+    needs: prepare-apply
+    if: needs.prepare-apply.outputs.has_apply == 'true'
     runs-on: ubuntu-latest
+    outputs:
+      has_apply: ${{ needs.prepare-apply.outputs.has_apply }}
+      apply_matrix: ${{ needs.prepare-apply.outputs.apply_matrix }}
     strategy:
       fail-fast: false
-      matrix: ${{ fromJson(needs.detect-agents.outputs.apply_matrix) }}
+      matrix: ${{ fromJson(needs.prepare-apply.outputs.apply_matrix) }}
     permissions:
       contents: write
       id-token: write
@@ -316,14 +388,12 @@ jobs:
 
   terraform-apply:
     name: Terraform Apply
-    needs:
-      - detect-agents
-      - terraform-plan
-    if: needs.detect-agents.outputs.has_apply == 'true'
+    needs: terraform-plan
+    if: needs.terraform-plan.outputs.has_apply == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix: ${{ fromJson(needs.detect-agents.outputs.apply_matrix) }}
+      matrix: ${{ fromJson(needs.terraform-plan.outputs.apply_matrix) }}
     environment:
       name: Production
     permissions:
@@ -434,12 +504,15 @@ jobs:
 
   terraform-destroy-plan:
     name: Terraform Destroy Plan
-    needs: detect-agents
-    if: needs.detect-agents.outputs.has_destroy == 'true'
+    needs: prepare-destroy
+    if: needs.prepare-destroy.outputs.has_destroy == 'true'
     runs-on: ubuntu-latest
+    outputs:
+      has_destroy: ${{ needs.prepare-destroy.outputs.has_destroy }}
+      destroy_matrix: ${{ needs.prepare-destroy.outputs.destroy_matrix }}
     strategy:
       fail-fast: false
-      matrix: ${{ fromJson(needs.detect-agents.outputs.destroy_matrix) }}
+      matrix: ${{ fromJson(needs.prepare-destroy.outputs.destroy_matrix) }}
     permissions:
       contents: read
       id-token: write
@@ -568,14 +641,12 @@ jobs:
 
   terraform-destroy-apply:
     name: Terraform Destroy Apply
-    needs:
-      - detect-agents
-      - terraform-destroy-plan
-    if: needs.detect-agents.outputs.has_destroy == 'true'
+    needs: terraform-destroy-plan
+    if: needs.terraform-destroy-plan.outputs.has_destroy == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix: ${{ fromJson(needs.detect-agents.outputs.destroy_matrix) }}
+      matrix: ${{ fromJson(needs.terraform-destroy-plan.outputs.destroy_matrix) }}
     environment:
       name: Production
     permissions:

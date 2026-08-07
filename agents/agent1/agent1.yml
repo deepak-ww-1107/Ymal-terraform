@@ -103,7 +103,6 @@ windows_function_app:
       WEBSITE_RUN_FROM_PACKAGE: "1"
     tags:
       Project: "Exelixis"
-
-      
+   
 
 
