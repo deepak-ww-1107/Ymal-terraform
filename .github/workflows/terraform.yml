@@ -221,14 +221,48 @@ jobs:
             echo "\`\`\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
-  terraform-plan:
-    name: Terraform Plan
+  prepare-apply-branch:
+    name: Prepare Apply Branch
     needs: detect-agents
     if: needs.detect-agents.outputs.has_apply == 'true'
     runs-on: ubuntu-latest
+    outputs:
+      has_apply: ${{ steps.export.outputs.has_apply }}
+      apply_matrix: ${{ steps.export.outputs.apply_matrix }}
+    steps:
+      - name: Export apply branch outputs
+        id: export
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "has_apply=${{ needs.detect-agents.outputs.has_apply }}" >> "$GITHUB_OUTPUT"
+          echo 'apply_matrix=${{ needs.detect-agents.outputs.apply_matrix }}' >> "$GITHUB_OUTPUT"
+
+  prepare-destroy-branch:
+    name: Prepare Destroy Branch
+    needs: detect-agents
+    if: needs.detect-agents.outputs.has_destroy == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      has_destroy: ${{ steps.export.outputs.has_destroy }}
+      destroy_matrix: ${{ steps.export.outputs.destroy_matrix }}
+    steps:
+      - name: Export destroy branch outputs
+        id: export
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "has_destroy=${{ needs.detect-agents.outputs.has_destroy }}" >> "$GITHUB_OUTPUT"
+          echo 'destroy_matrix=${{ needs.detect-agents.outputs.destroy_matrix }}' >> "$GITHUB_OUTPUT"
+
+  terraform-plan:
+    name: Terraform Plan
+    needs: prepare-apply-branch
+    if: needs.prepare-apply-branch.outputs.has_apply == 'true'
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix: ${{ fromJson(needs.detect-agents.outputs.apply_matrix) }}
+      matrix: ${{ fromJson(needs.prepare-apply-branch.outputs.apply_matrix) }}
     permissions:
       contents: write
       id-token: write
@@ -409,13 +443,13 @@ jobs:
   terraform-apply:
     name: Terraform Apply
     needs:
-      - detect-agents
+      - prepare-apply-branch
       - terraform-plan
-    if: needs.detect-agents.outputs.has_apply == 'true'
+    if: needs.prepare-apply-branch.outputs.has_apply == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix: ${{ fromJson(needs.detect-agents.outputs.apply_matrix) }}
+      matrix: ${{ fromJson(needs.prepare-apply-branch.outputs.apply_matrix) }}
     environment:
       name: Production
     permissions:
@@ -526,12 +560,12 @@ jobs:
 
   terraform-destroy-plan:
     name: Terraform Destroy Plan
-    needs: detect-agents
-    if: needs.detect-agents.outputs.has_destroy == 'true'
+    needs: prepare-destroy-branch
+    if: needs.prepare-destroy-branch.outputs.has_destroy == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix: ${{ fromJson(needs.detect-agents.outputs.destroy_matrix) }}
+      matrix: ${{ fromJson(needs.prepare-destroy-branch.outputs.destroy_matrix) }}
     permissions:
       contents: read
       id-token: write
@@ -661,13 +695,13 @@ jobs:
   terraform-destroy-apply:
     name: Terraform Destroy Apply
     needs:
-      - detect-agents
+      - prepare-destroy-branch
       - terraform-destroy-plan
-    if: needs.detect-agents.outputs.has_destroy == 'true'
+    if: needs.prepare-destroy-branch.outputs.has_destroy == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix: ${{ fromJson(needs.detect-agents.outputs.destroy_matrix) }}
+      matrix: ${{ fromJson(needs.prepare-destroy-branch.outputs.destroy_matrix) }}
     environment:
       name: Production
     permissions:
