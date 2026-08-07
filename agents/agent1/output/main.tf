@@ -1,10 +1,22 @@
+module "resource_group_1" {
+
+  source = "../../../modules/resource_group"
+
+  name     = "rg-demo-sin"
+  location = "South India"
+  tags = {
+    Project = "demo"
+  }
+
+}
+
 module "storage_account_1" {
 
   source = "../../../modules/storage_account"
 
   name                            = "exelixisstorageacct"
   location                        = "South India"
-  resource_group_name             = "rg-demo"
+  resource_group_name             = "rg-demo-sin"
   account_tier                    = "Standard"
   account_replication_type        = "LRS"
   account_kind                    = "StorageV2"
@@ -22,7 +34,7 @@ module "log_analytics_workspace_1" {
 
   name                = "law-eva-fet"
   location            = "South India"
-  resource_group_name = "rg-demo"
+  resource_group_name = "rg-demo-sin"
   tags = {
     Project = "Exelixis"
   }
@@ -35,7 +47,7 @@ module "application_insights_1" {
 
   name                = "appi-eva-dev"
   location            = "South India"
-  resource_group_name = "rg-demo"
+  resource_group_name = "rg-demo-sin"
   application_type    = "web"
   sampling_percentage = 100
   tags = {
@@ -50,7 +62,7 @@ module "service_plan_1" {
 
   name                = "asp-eva-dev"
   location            = "South India"
-  resource_group_name = "rg-demo"
+  resource_group_name = "rg-demo-sin"
   os_type             = "Linux"
   sku_name            = "B1"
   tags = {
@@ -65,7 +77,7 @@ module "linux_function_app_1" {
 
   name                                   = "func-linux-eva-dev"
   location                               = "South India"
-  resource_group_name                    = "rg-demo"
+  resource_group_name                    = "rg-demo-sin"
   service_plan_id                        = module.service_plan_1.id
   storage_account_name                   = module.storage_account_1.name
   storage_account_access_key             = module.storage_account_1.primary_access_key
@@ -92,7 +104,7 @@ module "windows_function_app_1" {
 
   name                                   = "func-windows-eva-dev"
   location                               = "South India"
-  resource_group_name                    = "rg-demo"
+  resource_group_name                    = "rg-demo-sin"
   service_plan_id                        = module.service_plan_1.id
   storage_account_name                   = module.storage_account_1.name
   storage_account_access_key             = module.storage_account_1.primary_access_key
